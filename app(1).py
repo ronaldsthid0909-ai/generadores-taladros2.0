@@ -41,7 +41,7 @@ st.markdown(
         }
 
         [data-testid="stSidebar"] * {
-            color: #eaf2fa !important;
+            color: #000000 !important;
         }
 
         .stSelectbox label, .stFileUploader label, .stNumberInput label {

@@ -40,8 +40,27 @@ st.markdown(
             border-right: 1px solid #18324d !important;
         }
 
-        [data-testid="stSidebar"] * {
+        [data-testid="stSidebar"] p, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] span {
             color: #eaf2fa !important;
+        }
+
+        /* Estilos específicos para solucionar la visibilidad de los inputs en el sidebar */
+        [data-testid="stSidebar"] div[data-baseweb="input"] {
+            background-color: #112a47 !important;
+            border: 1px solid #18324d !important;
+            border-radius: 6px !important;
+        }
+
+        [data-testid="stSidebar"] input {
+            color: #ffffff !important;
+            background-color: #112a47 !important;
+            font-weight: 600 !important;
+        }
+
+        [data-testid="stSidebar"] button {
+            color: #ffffff !important;
+            background-color: #112a47 !important;
+            border-color: #18324d !important;
         }
 
         .stSelectbox label, .stFileUploader label, .stNumberInput label {

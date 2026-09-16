@@ -5,6 +5,11 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.enum.shapes import MSO_SHAPE
 
 # ============================================================
 # CONFIGURACIÓN GENERAL
@@ -234,8 +239,177 @@ st.markdown(
 )
 
 # ============================================================
-# FUNCIONES AUXILIARES
+# FUNCIONES AUXILIARES Y GENERACIÓN DE POWERPOINT
 # ============================================================
+def create_powerpoint_slide(selected_rig, period_str, res, threshold, min_hours):
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    
+    blank_layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank_layout)
+    
+    # Fondo oscuro #081421
+    background = slide.background
+    fill = background.fill
+    fill.solid()
+    fill.fore_color.rgb = RGBColor(8, 20, 33)
+    
+    def add_card(left, top, width, height, bg_rgb, border_rgb=None):
+        shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = bg_rgb
+        if border_rgb:
+            shape.line.color.rgb = border_rgb
+            shape.line.width = Pt(1)
+        else:
+            shape.line.fill.background()
+        return shape
+
+    # Encabezado
+    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(8.0), Inches(0.6))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    r1 = p.add_run(); r1.text = f"RIG {selected_rig} "; r1.font.bold = True; r1.font.size = Pt(20); r1.font.color.rgb = RGBColor(255, 255, 255)
+    r2 = p.add_run(); r2.text = "CARGA INDIVIDUAL DE LOS GENERADORES"; r2.font.size = Pt(16); r2.font.color.rgb = RGBColor(255, 255, 255)
+
+    txBox2 = slide.shapes.add_textbox(Inches(9.5), Inches(0.15), Inches(3.3), Inches(0.6))
+    tf2 = txBox2.text_frame
+    p2 = tf2.paragraphs[0]; p2.alignment = PP_ALIGN.RIGHT
+    r_lbl = p2.add_run(); r_lbl.text = "Fecha analizada\n"; r_lbl.font.size = Pt(11); r_lbl.font.color.rgb = RGBColor(169, 184, 200); r_lbl.font.bold = True
+    p2_val = tf2.add_paragraph(); p2_val.alignment = PP_ALIGN.RIGHT
+    r_val = p2_val.add_run(); r_val.text = period_str; r_val.font.size = Pt(15); r_val.font.bold = True; r_val.font.color.rgb = RGBColor(255, 255, 255)
+
+    line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.85), Inches(12.333), Inches(0.02))
+    line.fill.solid(); line.fill.fore_color.rgb = RGBColor(0, 166, 214); line.line.fill.background()
+
+    # 6 Tarjetas Superiores
+    card_w = Inches(1.92); card_h = Inches(0.95); top_pos = Inches(1.0)
+    accents_rgb = [RGBColor(0, 168, 232), RGBColor(255, 192, 0), RGBColor(44, 160, 44), RGBColor(255, 75, 35), RGBColor(0, 168, 232), RGBColor(0, 168, 232)]
+    bg_card = RGBColor(17, 42, 71); border_card = RGBColor(24, 50, 77)
+
+    cards_data = []
+    for i in range(1, 5):
+        val = res["load_avgs"].get(i)
+        txt = f"{val:.2f}%" if val is not None else "N/A"
+        cards_data.append((f"Promedio de Potencia de GEN {i}", txt))
+    cards_data.append(("Promedio General de carga", f"{res['overall_load']:.2f}%"))
+    p_txt = f"{res['overall_power']:.2f} kW" if res["overall_power"] else "N/D"
+    cards_data.append(("Promedio General de Potencia", p_txt))
+
+    for idx, (lbl, val_str) in enumerate(cards_data):
+        left_pos = Inches(0.5) + idx * Inches(2.08)
+        add_card(left_pos, top_pos, card_w, card_h, bg_card, border_card)
+        add_card(left_pos, top_pos, Inches(0.08), card_h, accents_rgb[idx])
+        
+        tb = slide.shapes.add_textbox(left_pos + Inches(0.12), top_pos + Inches(0.05), card_w - Inches(0.15), card_h - Inches(0.1))
+        tf_c = tb.text_frame; tf_c.word_wrap = True
+        p_l = tf_c.paragraphs[0]; r_l = p_l.add_run(); r_l.text = lbl; r_l.font.size = Pt(8); r_l.font.bold = True; r_l.font.color.rgb = RGBColor(176, 196, 222)
+        p_v = tf_c.add_paragraph(); r_v = p_v.add_run(); r_v.text = val_str; r_v.font.size = Pt(17); r_v.font.bold = True; r_v.font.color.rgb = RGBColor(255, 255, 255)
+
+    # Imagen de Gráfica Plotly
+    fig = make_load_chart(res["df"], res["gen_cols"], res["time_col"], threshold, res["events"], selected_rig)
+    try:
+        img_bytes = fig.to_image(format="png", width=1200, height=600, scale=2)
+        image_stream = io.BytesIO(img_bytes)
+        slide.shapes.add_picture(image_stream, Inches(0.5), Inches(2.1), width=Inches(8.1))
+    except Exception:
+        pass
+
+    # Criterio y métricas derechas
+    right_left = Inches(8.75); right_w = Inches(4.08)
+    add_card(right_left, Inches(2.1), right_w, Inches(1.85), bg_card, border_card)
+    tb_crit = slide.shapes.add_textbox(right_left + Inches(0.15), Inches(2.15), right_w - Inches(0.3), Inches(1.75))
+    tf_crit = tb_crit.text_frame; tf_crit.word_wrap = True
+    p_cr1 = tf_crit.paragraphs[0]; r_cr1 = p_cr1.add_run(); r_cr1.text = "CRITERIO PARA DETECTAR EVENTOS\n"; r_cr1.font.size = Pt(11); r_cr1.font.bold = True; r_cr1.font.color.rgb = RGBColor(255, 255, 255)
+    p_cr2 = tf_crit.add_paragraph(); r_cr2 = p_cr2.add_run(); r_cr2.text = f"- Condición de revisión: 2 o más generadores activos con carga ≤ {threshold:.0f}%.\n"; r_cr2.font.size = Pt(10); r_cr2.font.color.rgb = RGBColor(234, 242, 250)
+    p_cr3 = tf_crit.add_paragraph(); r_cr3 = p_cr3.add_run(); r_cr3.text = f"- Alerta prolongada: la condición anterior permanece > {min_hours:g} h continuas."; r_cr3.font.size = Pt(10); r_cr3.font.color.rgb = RGBColor(234, 242, 250)
+
+    ev_df = res["events"]
+    tot_h = ev_df["Duración (h)"].sum() if not ev_df.empty else 0.0
+    max_h = ev_df["Duración (h)"].max() if not ev_df.empty else 0.0
+    max_act = int(res["work"]["generadores_activos"].max()) if len(res["work"]) else 0
+
+    sub_w = Inches(1.98); sub_h = Inches(0.9)
+    
+    # Tarjeta 1
+    add_card(right_left, Inches(4.08), sub_w, sub_h, bg_card, border_card)
+    tb_m1 = slide.shapes.add_textbox(right_left + Inches(0.1), Inches(4.1), sub_w - Inches(0.2), sub_h)
+    tf_m1 = tb_m1.text_frame
+    p1 = tf_m1.paragraphs[0]; r = p1.add_run(); r.text = "EVENTOS >5 H\n"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
+    p2 = tf_m1.add_paragraph(); r = p2.add_run(); r.text = f"{len(ev_df)}\n"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
+    p3 = tf_m1.add_paragraph(); r = p3.add_run(); r.text = f"{tot_h:.2f} h acumuladas"; r.font.size = Pt(8); r.font.color.rgb = RGBColor(143, 162, 183)
+
+    # Tarjeta 2
+    add_card(right_left + Inches(2.1), Inches(4.08), sub_w, sub_h, bg_card, border_card)
+    tb_m2 = slide.shapes.add_textbox(right_left + Inches(2.2), Inches(4.1), sub_w - Inches(0.2), sub_h)
+    tf_m2 = tb_m2.text_frame
+    p1 = tf_m2.paragraphs[0]; r = p1.add_run(); r.text = "MÁX. DURACIÓN\n"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
+    p2 = tf_m2.add_paragraph(); r = p2.add_run(); r.text = f"{max_h:.0f} h\n" if max_h else "0 h\n"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
+    p3 = tf_m2.add_paragraph(); r = p3.add_run(); r.text = "evento más prolongado"; r.font.size = Pt(8); r.font.color.rgb = RGBColor(143, 162, 183)
+
+    # Tarjeta 3
+    add_card(right_left, Inches(5.1), sub_w, sub_h, bg_card, border_card)
+    tb_m3 = slide.shapes.add_textbox(right_left + Inches(0.1), Inches(5.12), sub_w - Inches(0.2), sub_h)
+    tf_m3 = tb_m3.text_frame
+    p1 = tf_m3.paragraphs[0]; r = p1.add_run(); r.text = "Max de GEN activos\n"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
+    p2 = tf_m3.add_paragraph(); r = p2.add_run(); r.text = f"{max_act}\n"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
+    p3 = tf_m3.add_paragraph(); r = p3.add_run(); r.text = f"{len(res['gen_cols'])} disponibles"; r.font.size = Pt(8); r.font.color.rgb = RGBColor(143, 162, 183)
+
+    # Tarjeta 4
+    add_card(right_left + Inches(2.1), Inches(5.1), sub_w, sub_h, bg_card, border_card)
+    tb_m4 = slide.shapes.add_textbox(right_left + Inches(2.2), Inches(5.12), sub_w - Inches(0.2), sub_h)
+    tf_m4 = tb_m4.text_frame
+    p1 = tf_m4.paragraphs[0]; r = p1.add_run(); r.text = "HORAS EN EVENTOS\n"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
+    p2 = tf_m4.add_paragraph(); r = p2.add_run(); r.text = f"{tot_h:.2f} h\n"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
+    p3 = tf_m4.add_paragraph(); r = p3.add_run(); r.text = "Total horas acumuladas"; r.font.size = Pt(8); r.font.color.rgb = RGBColor(143, 162, 183)
+
+    # Tabla Eventos Detectados
+    tx_ev = slide.shapes.add_textbox(Inches(0.5), Inches(5.85), Inches(12.333), Inches(0.3))
+    tf_ev = tx_ev.text_frame; p_ev = tf_ev.paragraphs[0]; r_ev = p_ev.add_run(); r_ev.text = "EVENTOS DETECTADOS"; r_ev.font.size = Pt(12); r_ev.font.bold = True; r_ev.font.color.rgb = RGBColor(255, 255, 255)
+
+    if not res["events"].empty:
+        disp_events = res["events"].copy()
+        disp_events["Inicio"] = disp_events["Inicio"].dt.strftime("%Y-%m-%d %H:%M:%S")
+        disp_events["Fin"] = disp_events["Fin"].dt.strftime("%Y-%m-%d %H:%M:%S")
+        
+        rows = len(disp_events) + 1
+        cols_cnt = len(disp_events.columns)
+        
+        table_shape = slide.shapes.add_table(rows, cols_cnt, Inches(0.5), Inches(6.15), Inches(12.333), Inches(0.25 * rows))
+        table = table_shape.table
+        
+        for col_idx, col_name in enumerate(disp_events.columns):
+            cell = table.cell(0, col_idx)
+            cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(17, 42, 71)
+            cell.text = str(col_name)
+            for paragraph in cell.text_frame.paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(8.5); run.font.bold = True; run.font.color.rgb = RGBColor(255, 255, 255)
+        
+        for row_idx, row_data in disp_events.reset_index(drop=True).iterrows():
+            for col_idx, val in enumerate(row_data):
+                cell = table.cell(row_idx + 1, col_idx)
+                cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(8, 20, 33)
+                cell.text = str(val)
+                for paragraph in cell.text_frame.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(8); run.font.color.rgb = RGBColor(234, 242, 250)
+
+    # Footer
+    tx_f = slide.shapes.add_textbox(Inches(0.5), Inches(7.05), Inches(3.0), Inches(0.3))
+    tf_f = tx_f.text_frame; p_f = tf_f.paragraphs[0]; r_f = p_f.add_run(); r_f.text = "NABORS"; r_f.font.size = Pt(13); r_f.font.bold = True; r_f.font.italic = True; r_f.font.color.rgb = RGBColor(255, 255, 255)
+
+    tx_fr = slide.shapes.add_textbox(Inches(9.0), Inches(7.08), Inches(3.8), Inches(0.3))
+    tf_fr = tx_fr.text_frame; p_fr = tf_fr.paragraphs[0]; p_fr.alignment = PP_ALIGN.RIGHT
+    r_fr = p_fr.add_run(); r_fr.text = "NABORS.COM     1 "; r_fr.font.size = Pt(9); r_fr.font.color.rgb = RGBColor(143, 162, 183)
+
+    pptx_io = io.BytesIO()
+    prs.save(pptx_io)
+    pptx_io.seek(0)
+    return pptx_io
+
+
 def normalize_name(value: str) -> str:
     return re.sub(r"\s+", " ", str(value).strip())
 
@@ -256,7 +430,6 @@ def read_uploaded_file(uploaded_file) -> Dict[str, pd.DataFrame]:
             if sheet.lower() in {"parametros", "parameters", "readme"}:
                 continue
             
-            # Carga preliminar para identificar la fila de encabezados si hay filas en blanco o metadata
             df_raw = pd.read_excel(io.BytesIO(raw), sheet_name=sheet, header=None)
             if df_raw is not None and not df_raw.empty:
                 header_row = 0
@@ -280,13 +453,11 @@ def find_time_column(df: pd.DataFrame) -> str:
         if candidate in cols:
             return cols[candidate]
     
-    # Búsqueda por palabras clave en las columnas
     for col in df.columns:
         text = str(col).lower()
         if "timestamp" in text or "datetime" in text or "fecha" in text or text == "time":
             return col
             
-    # Búsqueda secundaria si contiene la palabra 'time'
     for col in df.columns:
         text = str(col).lower()
         if "time" in text:
@@ -303,7 +474,7 @@ def find_generator_load_columns(df: pd.DataFrame) -> List[str]:
         if "gen" not in low and "generator" not in low and "generador" not in low:
             continue
         if "total" in low:
-            continue  # Ignorar la columna total para las cargas individuales
+            continue
         m = re.search(r"(?:gen(?:erator|erador)?[\s_\-]*(\d+))", low, re.IGNORECASE)
         if not m:
             continue
@@ -317,7 +488,6 @@ def find_generator_load_columns(df: pd.DataFrame) -> List[str]:
 
 
 def find_overall_columns(df: pd.DataFrame) -> Tuple[str, str]:
-    """Busca directamente las columnas Percent power used total y GEN Total Power"""
     total_load_col = None
     total_power_col = None
 
@@ -342,7 +512,6 @@ def prepare_rig(df: pd.DataFrame):
     df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
     df = df.dropna(subset=[time_col]).sort_values(time_col).reset_index(drop=True)
 
-    # Limpieza de cargas individuales
     for col in gen_cols:
         df[col] = (
             df[col].astype(str)
@@ -351,7 +520,6 @@ def prepare_rig(df: pd.DataFrame):
         )
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-    # Limpieza de columnas totales
     if total_load_col:
         df[total_load_col] = (
             df[total_load_col].astype(str)
@@ -442,17 +610,13 @@ def detect_events(
 def calculate_metrics(df, gen_cols, total_load_col, total_power_col):
     load_avgs = {}
 
-    # Promedios de carga por cada generador en operación (>0%)
     for col in gen_cols:
         m = re.search(r"(?:gen(?:erator|erador)?[\s_\-]*(\d+))", str(col), re.IGNORECASE)
         valid_series = df[df[col] > ACTIVE_THRESHOLD][col]
         if not valid_series.empty and m:
             load_avgs[int(m.group(1))] = float(valid_series.mean())
 
-    # Promedio General Carga: Promedio directo de 'Percent power used total'
     overall_load = float(df[total_load_col].mean()) if total_load_col and total_load_col in df else 0.0
-
-    # Promedio Potencia: Promedio directo de 'GEN Total Power'
     overall_power = float(df[total_power_col].mean()) if total_power_col and total_power_col in df else 0.0
 
     return load_avgs, overall_load, overall_power
@@ -517,7 +681,7 @@ def make_load_chart(df, gen_cols, time_col, threshold, events, rig):
 
     fig.update_layout(
         title=dict(
-            text=f"Carga de los generadores — Rig {rig}",
+            text=f"Carga de los 4 generadores — Rig {rig}",
             font=dict(color="#ffffff", size=14),
             x=0.0,
         ),
@@ -548,7 +712,7 @@ def make_load_chart(df, gen_cols, time_col, threshold, events, rig):
         ),
         hovermode="x unified",
         margin=dict(l=35, r=15, t=40, b=35),
-        height=380,
+        height=365,
     )
     return fig
 
@@ -660,17 +824,32 @@ summary = pd.DataFrame(all_results)
 # ============================================================
 # SELECCIÓN Y DASHBOARD
 # ============================================================
-selected_rig = st.selectbox("Seleccionar Taladro", list(rig_prepared.keys()))
+col_select, col_btn = st.columns([3, 1])
+with col_select:
+    selected_rig = st.selectbox("Seleccionar Taladro", list(rig_prepared.keys()))
+
 res = rig_prepared[selected_rig]
 
 start_t = res["df"][res["time_col"]].min()
 end_t = res["df"][res["time_col"]].max()
 period_str = f"{start_t.strftime('%d %b')} – {end_t.strftime('%d %b')}" if pd.notna(start_t) else ""
 
+# Botón para descargar el PowerPoint con el diseño exacto
+with col_btn:
+    st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+    pptx_file = create_powerpoint_slide(selected_rig, period_str, res, threshold, min_hours)
+    st.download_button(
+        label="📊 Descargar PowerPoint",
+        data=pptx_file,
+        file_name=f"RIG_{selected_rig}_Reporte_Generadores.pptx",
+        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        use_container_width=True,
+    )
+
 st.markdown(
     f"""
     <div class="dashboard-header">
-        <div class="dashboard-title">RIG {selected_rig} <span>— CARGA INDIVIDUAL DE LOS GENERADORES</span></div>
+        <div class="dashboard-title">RIG {selected_rig} <span>CARGA INDIVIDUAL DE LOS GENERADORES</span></div>
         <div class="date-box">
             <div class="date-label">Fecha analizada</div>
             <div class="date-value">{period_str}</div>
@@ -688,19 +867,19 @@ for i in range(1, 5):
     val = res["load_avgs"].get(i)
     txt = f"{val:.2f}%" if val is not None else "N/A"
     with cols[i - 1]:
-        render_card(f"PROMEDIO GEN {i}", txt, accents[i - 1], "Promedio en operación")
+        render_card(f"Promedio de Potencia de GEN {i}", txt, accents[i - 1])
 
 with cols[4]:
-    render_card("PROMEDIO GENERAL CARGA", f"{res['overall_load']:.2f}%", "#00A8E8", "Generadores activos")
+    render_card("Promedio General de carga", f"{res['overall_load']:.2f}%", "#00A8E8")
 
 with cols[5]:
-    p_txt = f"{res['overall_power']:.1f} kW" if res["overall_power"] else "N/D"
-    render_card("PROMEDIO POTENCIA", p_txt, "#00A8E8", "Promedio en kW")
+    p_txt = f"{res['overall_power']:.2f} kW" if res["overall_power"] else "N/D"
+    render_card("Promedio General de Potencia", p_txt, "#00A8E8")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 # Sección central
-c_left, c_right = st.columns([2.05, 1.0], gap="medium")
+c_left, c_right = st.columns([2.3, 1.0], gap="medium")
 
 with c_left:
     fig = make_load_chart(res["df"], res["gen_cols"], res["time_col"], threshold, res["events"], selected_rig)
@@ -725,17 +904,17 @@ with c_right:
 
     r1_1, r1_2 = st.columns(2)
     with r1_1:
-        render_card("EVENTOS >5 H", f"{len(ev_df)}", "#00A8E8", f"{tot_h:.1f} h acumuladas")
+        render_card("EVENTOS >5 H", f"{len(ev_df)}", "#00A8E8", f"{tot_h:.2f} h acumuladas")
     with r1_2:
-        render_card("MÁX. DURACIÓN", f"{max_h:.1f} h", "#00A8E8", "Evento mayor")
+        render_card("MÁX. DURACIÓN", f"{max_h:.0f} h" if max_h else "0 h", "#00A8E8", "evento más prolongado")
 
     st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
 
     r2_1, r2_2 = st.columns(2)
     with r2_1:
-        render_card("MÁX. GEN ACTIVOS", f"{max_act}", "#00A8E8", f"{len(res['gen_cols'])} instalados")
+        render_card("Max de GEN activos", f"{max_act}", "#00A8E8", f"{len(res['gen_cols'])} disponibles")
     with r2_2:
-        render_card("HORAS EN EVENTOS", f"{tot_h:.1f} h", "#00A8E8", "Tiempo acumulado")
+        render_card("HORAS EN EVENTOS", f"{tot_h:.2f} h", "#00A8E8", "Total horas acumuladas")
 
 # Tablas y Resultados
 st.markdown('<div class="section-title">EVENTOS DETECTADOS</div>', unsafe_allow_html=True)
@@ -751,7 +930,7 @@ else:
 st.markdown("---")
 st.markdown('<div class="section-title">VISTA DE FLOTA</div>', unsafe_allow_html=True)
 
-fc1, fc2 = st.columns([2.3, 1], gap="medium")
+fc1, fc2 = st.columns([1.3, 0.9], gap="medium")
 with fc1:
     st.plotly_chart(make_fleet_chart(summary), use_container_width=True, config={"displaylogo": False})
 with fc2:
@@ -770,7 +949,7 @@ st.markdown(
                 <i style="background:#28a745"></i>
             </span>
         </div>
-        <div class="footer-right">NABORS.COM</div>
+        <div class="footer-right">NABORS.COM &nbsp;&nbsp;|&nbsp;&nbsp; 1</div>
     </div>
     """,
     unsafe_allow_html=True,

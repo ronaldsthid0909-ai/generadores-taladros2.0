@@ -751,7 +751,7 @@ else:
 st.markdown("---")
 st.markdown('<div class="section-title">VISTA DE FLOTA</div>', unsafe_allow_html=True)
 
-fc1, fc2 = st.columns([4, 2], gap="medium")
+fc1, fc2 = st.columns([2, 1], gap="medium")
 with fc1:
     st.plotly_chart(make_fleet_chart(summary), use_container_width=True, config={"displaylogo": False})
 with fc2:

@@ -44,10 +44,11 @@ st.markdown(
             color: #eaf2fa !important;
         }
 
-        [data-testid="stSidebar"] input {
-            background-color: #112a47 !important;
+        /* AJUSTE DE CONTRASTE PARA LABELS DE CONTROLES (SELECTBOX, UPLOAD) */
+        .stSelectbox label, .stFileUploader label, .stNumberInput label {
             color: #ffffff !important;
-            border: 1px solid #18324d !important;
+            font-weight: 600 !important;
+            font-size: 14px !important;
         }
 
         .block-container {
@@ -173,18 +174,6 @@ st.markdown(
             font-size: 18px;
             font-weight: 700;
             margin: 20px 0 10px 0;
-        }
-
-        /* FORZAR TEMA OSCURO EN DATAFRAMES NATIVOS */
-        div[data-testid="stDataFrame"] {
-            background-color: #112a47 !important;
-            border: 1px solid #18324d !important;
-            border-radius: 8px !important;
-        }
-        
-        div[data-testid="stDataFrame"] div {
-            background-color: #112a47 !important;
-            color: #ffffff !important;
         }
 
         .brand-footer {
@@ -635,7 +624,7 @@ summary = pd.DataFrame(all_results)
 # ============================================================
 # SELECCIÓN Y DASHBOARD
 # ============================================================
-selected_rig = st.selectbox("🛢️ Seleccionar Taladro", list(rig_prepared.keys()))
+selected_rig = st.selectbox("Seleccionar Taladro", list(rig_prepared.keys()))
 res = rig_prepared[selected_rig]
 
 start_t = res["df"][res["time_col"]].min()

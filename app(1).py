@@ -5,6 +5,9 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
@@ -49,7 +52,6 @@ st.markdown(
             color: #eaf2fa !important;
         }
 
-        /* Estilos específicos para solucionar la visibilidad de los inputs en el sidebar */
         [data-testid="stSidebar"] div[data-baseweb="input"] {
             background-color: #112a47 !important;
             border: 1px solid #18324d !important;
@@ -241,6 +243,51 @@ st.markdown(
 # ============================================================
 # FUNCIONES AUXILIARES Y GENERACIÓN DE POWERPOINT
 # ============================================================
+
+def generate_chart_image(df, gen_cols, time_col, threshold, events, selected_rig):
+    """Genera la gráfica en un buffer de imagen con Matplotlib garantizando 100% compatibilidad."""
+    fig, ax = plt.subplots(figsize=(10.5, 4.8), facecolor='#112a47')
+    ax.set_facecolor('#112a47')
+    
+    colors_map = {
+        "GEN 1": "#00A8E8",
+        "GEN 2": "#FFC000",
+        "GEN 3": "#2CA02C",
+        "GEN 4": "#FF4B23",
+    }
+    
+    for col in gen_cols:
+        label = gen_label(col)
+        color = colors_map.get(label, "#FFFFFF")
+        ax.plot(df[time_col], df[col], label=label, color=color, linewidth=1.4)
+        
+    ax.axhline(threshold, color='#ffffff', linestyle=':', linewidth=1.2, label=f'UMBRAL {threshold:.0f}%')
+    
+    for _, ev in events.iterrows():
+        ax.axvspan(ev["Inicio"], ev["Fin"], color='#00a6d6', alpha=0.3, linewidth=0)
+        
+    ax.set_title(f"Carga de los 4 generadores — Rig {selected_rig}", color="#ffffff", fontsize=13, weight="bold", pad=12, loc="left")
+    ax.set_ylabel("Carga (%)", color="#ffffff", fontsize=10, weight="bold")
+    ax.set_xlabel("Tiempo", color="#ffffff", fontsize=10, weight="bold")
+    
+    ax.tick_params(colors="#ffffff", labelsize=9)
+    for spine in ax.spines.values():
+        spine.set_color("#18324d")
+        
+    ax.grid(True, color="#ffffff", alpha=0.08, linestyle="-")
+    
+    leg = ax.legend(loc="upper right", facecolor="#081421", edgecolor="#18324d", fontsize=8)
+    for text in leg.get_texts():
+        text.set_color("white")
+        
+    plt.tight_layout()
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=250, facecolor=fig.get_facecolor(), edgecolor="none")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
 def create_powerpoint_slide(selected_rig, period_str, res, threshold, min_hours):
     prs = Presentation()
     prs.slide_width = Inches(13.333)
@@ -266,14 +313,15 @@ def create_powerpoint_slide(selected_rig, period_str, res, threshold, min_hours)
             shape.line.fill.background()
         return shape
 
-    # Encabezado
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(8.0), Inches(0.6))
+    # 1. ENCABEZADO
+    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(8.5), Inches(0.6))
     tf = txBox.text_frame
+    tf.word_wrap = True
     p = tf.paragraphs[0]
-    r1 = p.add_run(); r1.text = f"RIG {selected_rig} "; r1.font.bold = True; r1.font.size = Pt(20); r1.font.color.rgb = RGBColor(255, 255, 255)
-    r2 = p.add_run(); r2.text = "CARGA INDIVIDUAL DE LOS GENERADORES"; r2.font.size = Pt(16); r2.font.color.rgb = RGBColor(255, 255, 255)
+    r1 = p.add_run(); r1.text = f"RIG {selected_rig}  "; r1.font.bold = True; r1.font.size = Pt(20); r1.font.color.rgb = RGBColor(255, 255, 255)
+    r2 = p.add_run(); r2.text = "CARGA INDIVIDUAL DE LOS GENERADORES"; r2.font.bold = False; r2.font.size = Pt(15); r2.font.color.rgb = RGBColor(255, 255, 255)
 
-    txBox2 = slide.shapes.add_textbox(Inches(9.5), Inches(0.15), Inches(3.3), Inches(0.6))
+    txBox2 = slide.shapes.add_textbox(Inches(9.2), Inches(0.15), Inches(3.6), Inches(0.65))
     tf2 = txBox2.text_frame
     p2 = tf2.paragraphs[0]; p2.alignment = PP_ALIGN.RIGHT
     r_lbl = p2.add_run(); r_lbl.text = "Fecha analizada\n"; r_lbl.font.size = Pt(11); r_lbl.font.color.rgb = RGBColor(169, 184, 200); r_lbl.font.bold = True
@@ -283,7 +331,7 @@ def create_powerpoint_slide(selected_rig, period_str, res, threshold, min_hours)
     line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.85), Inches(12.333), Inches(0.02))
     line.fill.solid(); line.fill.fore_color.rgb = RGBColor(0, 166, 214); line.line.fill.background()
 
-    # 6 Tarjetas Superiores
+    # 2. SEIS TARJETAS SUPERIORES
     card_w = Inches(1.92); card_h = Inches(0.95); top_pos = Inches(1.0)
     accents_rgb = [RGBColor(0, 168, 232), RGBColor(255, 192, 0), RGBColor(44, 160, 44), RGBColor(255, 75, 35), RGBColor(0, 168, 232), RGBColor(0, 168, 232)]
     bg_card = RGBColor(17, 42, 71); border_card = RGBColor(24, 50, 77)
@@ -307,16 +355,11 @@ def create_powerpoint_slide(selected_rig, period_str, res, threshold, min_hours)
         p_l = tf_c.paragraphs[0]; r_l = p_l.add_run(); r_l.text = lbl; r_l.font.size = Pt(8); r_l.font.bold = True; r_l.font.color.rgb = RGBColor(176, 196, 222)
         p_v = tf_c.add_paragraph(); r_v = p_v.add_run(); r_v.text = val_str; r_v.font.size = Pt(17); r_v.font.bold = True; r_v.font.color.rgb = RGBColor(255, 255, 255)
 
-    # Imagen de Gráfica Plotly
-    fig = make_load_chart(res["df"], res["gen_cols"], res["time_col"], threshold, res["events"], selected_rig)
-    try:
-        img_bytes = fig.to_image(format="png", width=1200, height=600, scale=2)
-        image_stream = io.BytesIO(img_bytes)
-        slide.shapes.add_picture(image_stream, Inches(0.5), Inches(2.1), width=Inches(8.1))
-    except Exception:
-        pass
+    # 3. GRÁFICA PRINCIPAL (MATPLOTLIB BUFFER)
+    chart_img = generate_chart_image(res["df"], res["gen_cols"], res["time_col"], threshold, res["events"], selected_rig)
+    slide.shapes.add_picture(chart_img, Inches(0.5), Inches(2.1), width=Inches(8.0), height=Inches(3.65))
 
-    # Criterio y métricas derechas
+    # 4. CRITERIO Y TARJETAS LATERALES DERECHAS
     right_left = Inches(8.75); right_w = Inches(4.08)
     add_card(right_left, Inches(2.1), right_w, Inches(1.85), bg_card, border_card)
     tb_crit = slide.shapes.add_textbox(right_left + Inches(0.15), Inches(2.15), right_w - Inches(0.3), Inches(1.75))
@@ -330,41 +373,41 @@ def create_powerpoint_slide(selected_rig, period_str, res, threshold, min_hours)
     max_h = ev_df["Duración (h)"].max() if not ev_df.empty else 0.0
     max_act = int(res["work"]["generadores_activos"].max()) if len(res["work"]) else 0
 
-    sub_w = Inches(1.98); sub_h = Inches(0.9)
+    sub_w = Inches(1.98); sub_h = Inches(0.85)
     
     # Tarjeta 1
     add_card(right_left, Inches(4.08), sub_w, sub_h, bg_card, border_card)
-    tb_m1 = slide.shapes.add_textbox(right_left + Inches(0.1), Inches(4.1), sub_w - Inches(0.2), sub_h)
-    tf_m1 = tb_m1.text_frame
-    p1 = tf_m1.paragraphs[0]; r = p1.add_run(); r.text = "EVENTOS >5 H\n"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
-    p2 = tf_m1.add_paragraph(); r = p2.add_run(); r.text = f"{len(ev_df)}\n"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
-    p3 = tf_m1.add_paragraph(); r = p3.add_run(); r.text = f"{tot_h:.2f} h acumuladas"; r.font.size = Pt(8); r.font.color.rgb = RGBColor(143, 162, 183)
+    tb_m1 = slide.shapes.add_textbox(right_left + Inches(0.08), Inches(4.1), sub_w - Inches(0.12), sub_h - Inches(0.05))
+    tf_m1 = tb_m1.text_frame; tf_m1.word_wrap = True
+    p1 = tf_m1.paragraphs[0]; r = p1.add_run(); r.text = "EVENTOS >5 H"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
+    p2 = tf_m1.add_paragraph(); r = p2.add_run(); r.text = f"{len(ev_df)}"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
+    p3 = tf_m1.add_paragraph(); r = p3.add_run(); r.text = f"{tot_h:.2f} h acumuladas"; r.font.size = Pt(7.5); r.font.color.rgb = RGBColor(143, 162, 183)
 
     # Tarjeta 2
     add_card(right_left + Inches(2.1), Inches(4.08), sub_w, sub_h, bg_card, border_card)
-    tb_m2 = slide.shapes.add_textbox(right_left + Inches(2.2), Inches(4.1), sub_w - Inches(0.2), sub_h)
-    tf_m2 = tb_m2.text_frame
-    p1 = tf_m2.paragraphs[0]; r = p1.add_run(); r.text = "MÁX. DURACIÓN\n"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
-    p2 = tf_m2.add_paragraph(); r = p2.add_run(); r.text = f"{max_h:.0f} h\n" if max_h else "0 h\n"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
-    p3 = tf_m2.add_paragraph(); r = p3.add_run(); r.text = "evento más prolongado"; r.font.size = Pt(8); r.font.color.rgb = RGBColor(143, 162, 183)
+    tb_m2 = slide.shapes.add_textbox(right_left + Inches(2.18), Inches(4.1), sub_w - Inches(0.12), sub_h - Inches(0.05))
+    tf_m2 = tb_m2.text_frame; tf_m2.word_wrap = True
+    p1 = tf_m2.paragraphs[0]; r = p1.add_run(); r.text = "MÁX. DURACIÓN"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
+    p2 = tf_m2.add_paragraph(); r = p2.add_run(); r.text = f"{max_h:.0f} h" if max_h else "0 h"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
+    p3 = tf_m2.add_paragraph(); r = p3.add_run(); r.text = "evento más prolongado"; r.font.size = Pt(7.5); r.font.color.rgb = RGBColor(143, 162, 183)
 
     # Tarjeta 3
-    add_card(right_left, Inches(5.1), sub_w, sub_h, bg_card, border_card)
-    tb_m3 = slide.shapes.add_textbox(right_left + Inches(0.1), Inches(5.12), sub_w - Inches(0.2), sub_h)
-    tf_m3 = tb_m3.text_frame
-    p1 = tf_m3.paragraphs[0]; r = p1.add_run(); r.text = "Max de GEN activos\n"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
-    p2 = tf_m3.add_paragraph(); r = p2.add_run(); r.text = f"{max_act}\n"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
-    p3 = tf_m3.add_paragraph(); r = p3.add_run(); r.text = f"{len(res['gen_cols'])} disponibles"; r.font.size = Pt(8); r.font.color.rgb = RGBColor(143, 162, 183)
+    add_card(right_left, Inches(5.0), sub_w, sub_h, bg_card, border_card)
+    tb_m3 = slide.shapes.add_textbox(right_left + Inches(0.08), Inches(5.02), sub_w - Inches(0.12), sub_h - Inches(0.05))
+    tf_m3 = tb_m3.text_frame; tf_m3.word_wrap = True
+    p1 = tf_m3.paragraphs[0]; r = p1.add_run(); r.text = "Max de GEN activos"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
+    p2 = tf_m3.add_paragraph(); r = p2.add_run(); r.text = f"{max_act}"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
+    p3 = tf_m3.add_paragraph(); r = p3.add_run(); r.text = f"{len(res['gen_cols'])} disponibles"; r.font.size = Pt(7.5); r.font.color.rgb = RGBColor(143, 162, 183)
 
     # Tarjeta 4
-    add_card(right_left + Inches(2.1), Inches(5.1), sub_w, sub_h, bg_card, border_card)
-    tb_m4 = slide.shapes.add_textbox(right_left + Inches(2.2), Inches(5.12), sub_w - Inches(0.2), sub_h)
-    tf_m4 = tb_m4.text_frame
-    p1 = tf_m4.paragraphs[0]; r = p1.add_run(); r.text = "HORAS EN EVENTOS\n"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
-    p2 = tf_m4.add_paragraph(); r = p2.add_run(); r.text = f"{tot_h:.2f} h\n"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
-    p3 = tf_m4.add_paragraph(); r = p3.add_run(); r.text = "Total horas acumuladas"; r.font.size = Pt(8); r.font.color.rgb = RGBColor(143, 162, 183)
+    add_card(right_left + Inches(2.1), Inches(5.0), sub_w, sub_h, bg_card, border_card)
+    tb_m4 = slide.shapes.add_textbox(right_left + Inches(2.18), Inches(5.02), sub_w - Inches(0.12), sub_h - Inches(0.05))
+    tf_m4 = tb_m4.text_frame; tf_m4.word_wrap = True
+    p1 = tf_m4.paragraphs[0]; r = p1.add_run(); r.text = "HORAS EN EVENTOS"; r.font.size = Pt(8); r.font.bold = True; r.font.color.rgb = RGBColor(176, 196, 222)
+    p2 = tf_m4.add_paragraph(); r = p2.add_run(); r.text = f"{tot_h:.2f} h"; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = RGBColor(255, 255, 255)
+    p3 = tf_m4.add_paragraph(); r = p3.add_run(); r.text = "Total horas acumuladas"; r.font.size = Pt(7.5); r.font.color.rgb = RGBColor(143, 162, 183)
 
-    # Tabla Eventos Detectados
+    # 5. TABLA EVENTOS DETECTADOS
     tx_ev = slide.shapes.add_textbox(Inches(0.5), Inches(5.85), Inches(12.333), Inches(0.3))
     tf_ev = tx_ev.text_frame; p_ev = tf_ev.paragraphs[0]; r_ev = p_ev.add_run(); r_ev.text = "EVENTOS DETECTADOS"; r_ev.font.size = Pt(12); r_ev.font.bold = True; r_ev.font.color.rgb = RGBColor(255, 255, 255)
 
@@ -396,7 +439,7 @@ def create_powerpoint_slide(selected_rig, period_str, res, threshold, min_hours)
                     for run in paragraph.runs:
                         run.font.size = Pt(8); run.font.color.rgb = RGBColor(234, 242, 250)
 
-    # Footer
+    # 6. FOOTER
     tx_f = slide.shapes.add_textbox(Inches(0.5), Inches(7.05), Inches(3.0), Inches(0.3))
     tf_f = tx_f.text_frame; p_f = tf_f.paragraphs[0]; r_f = p_f.add_run(); r_f.text = "NABORS"; r_f.font.size = Pt(13); r_f.font.bold = True; r_f.font.italic = True; r_f.font.color.rgb = RGBColor(255, 255, 255)
 

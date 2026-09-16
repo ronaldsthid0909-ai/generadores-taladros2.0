@@ -548,7 +548,7 @@ def make_load_chart(df, gen_cols, time_col, threshold, events, rig):
         ),
         hovermode="x unified",
         margin=dict(l=35, r=15, t=40, b=35),
-        height=400,
+        height=380,
     )
     return fig
 

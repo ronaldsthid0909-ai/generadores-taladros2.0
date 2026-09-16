@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 # ============================================================
-# CONFIGURACION GENERAL
+# CONFIGURACIÓN GENERAL
 # ============================================================
 st.set_page_config(
     page_title="Optimización de Generadores",
@@ -18,35 +18,32 @@ st.set_page_config(
 
 DEFAULT_THRESHOLD = 20.0
 DEFAULT_MIN_HOURS = 5.0
-DEFAULT_ACTIVE_THRESHOLD = 1.0  # Ajustado a >1.0% para ignorar el ruido cerca de cero
-
-GEN_LOAD_RE = re.compile(r"(?:percent\s+power\s+used\s+)?GEN\s*([1-4])", re.IGNORECASE)
+ACTIVE_THRESHOLD = 0.0  # Carga mayor a 0% indica generador activo
 
 # ============================================================
-# ESTILO — DASHBOARD OSCURO TIPO PRESENTACION
+# ESTILO Y TEMAS OSCUROS (CSS GLOBAL)
 # ============================================================
 st.markdown(
     """
     <style>
         .stApp {
-            background: #081421;
-            color: #ffffff;
+            background-color: #081421 !important;
+            color: #ffffff !important;
         }
 
         [data-testid="stHeader"] {
-            background: #081421;
+            background-color: #081421 !important;
         }
 
         [data-testid="stSidebar"] {
-            background: #0b1b2d;
-            border-right: 1px solid #18324d;
+            background-color: #0b1b2d !important;
+            border-right: 1px solid #18324d !important;
         }
 
         [data-testid="stSidebar"] * {
             color: #eaf2fa !important;
         }
 
-        /* Estilo para los cuadros de entrada en la barra lateral */
         [data-testid="stSidebar"] input {
             background-color: #112a47 !important;
             color: #ffffff !important;
@@ -59,6 +56,7 @@ st.markdown(
             max-width: 1500px;
         }
 
+        /* HEADER Y TITULOS */
         .dashboard-header {
             display: flex;
             justify-content: space-between;
@@ -98,15 +96,16 @@ st.markdown(
             margin-top: 3px;
         }
 
+        /* METRIC CARDS EN HTML */
         .metric-card {
             background: #112a47;
             border-radius: 10px;
-            min-height: 85px;
+            height: 95px;
             padding: 12px 14px;
             position: relative;
             overflow: hidden;
             border: 1px solid #18324d;
-            margin-bottom: 10px;
+            box-sizing: border-box;
         }
 
         .metric-card .accent {
@@ -127,9 +126,9 @@ st.markdown(
 
         .metric-value {
             color: #ffffff;
-            font-size: 24px;
+            font-size: 22px;
             font-weight: 800;
-            margin-top: 6px;
+            margin-top: 4px;
             white-space: nowrap;
         }
 
@@ -141,26 +140,26 @@ st.markdown(
 
         .criterion {
             background: #112a47;
-            border-radius: 12px;
-            padding: 18px 20px;
+            border-radius: 10px;
+            padding: 16px 18px;
             border: 1px solid #18324d;
             margin-bottom: 15px;
         }
 
         .criterion h3 {
             color: #ffffff;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 700;
-            margin: 0 0 12px 0;
+            margin: 0 0 10px 0;
             border-bottom: 1px solid #18324d;
             padding-bottom: 6px;
         }
 
         .criterion p {
             color: #eaf2fa;
-            font-size: 13px;
+            font-size: 12px;
             line-height: 1.4;
-            margin: 0 0 8px 0;
+            margin: 0 0 6px 0;
         }
 
         .criterion .dash {
@@ -171,9 +170,21 @@ st.markdown(
 
         .section-title {
             color: #ffffff;
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 700;
-            margin: 15px 0 10px 0;
+            margin: 20px 0 10px 0;
+        }
+
+        /* FORZAR TEMA OSCURO EN DATAFRAMES NATIVOS */
+        div[data-testid="stDataFrame"] {
+            background-color: #112a47 !important;
+            border: 1px solid #18324d !important;
+            border-radius: 8px !important;
+        }
+        
+        div[data-testid="stDataFrame"] div {
+            background-color: #112a47 !important;
+            color: #ffffff !important;
         }
 
         .brand-footer {
@@ -187,23 +198,21 @@ st.markdown(
         }
 
         .brand-name {
-            font-size: 21px;
+            font-size: 20px;
             font-weight: 800;
             font-style: italic;
-            letter-spacing: .5px;
         }
 
         .brand-mark {
             display: inline-flex;
             gap: 4px;
             margin-left: 10px;
-            vertical-align: middle;
         }
 
         .brand-mark i {
             display: inline-block;
             width: 8px;
-            height: 24px;
+            height: 22px;
             transform: skew(-18deg);
         }
 
@@ -212,50 +221,13 @@ st.markdown(
             letter-spacing: 2px;
             color: #8fa2b7;
         }
-
-        /* Estilo oscuro forzado para DataFrames de Streamlit */
-        div[data-testid="stDataFrame"] {
-            border-radius: 8px;
-            overflow: hidden;
-            border: 1px solid #18324d;
-            background-color: #112a47;
-        }
-
-        /* Estilos de Métricas Nativas de Streamlit */
-        [data-testid="stMetricValue"] {
-            color: #ffffff !important;
-            font-size: 26px !important;
-        }
-        [data-testid="stMetricLabel"] {
-            color: #b0c4de !important;
-            font-size: 13px !important;
-        }
-
-        .stSelectbox label, .stFileUploader label {
-            color: #dce7f1 !important;
-            font-weight: 700 !important;
-        }
-
-        .stButton button, .stDownloadButton button {
-            background: #123456;
-            color: white;
-            border: 1px solid #24537a;
-            border-radius: 8px;
-            width: 100%;
-        }
-
-        @media (max-width: 900px) {
-            .dashboard-header { flex-direction: column; align-items: flex-start; gap: 10px; }
-            .dashboard-title { font-size: 19px; }
-            .date-box { text-align: left; }
-        }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 # ============================================================
-# UTILIDADES
+# FUNCIONES AUXILIARES
 # ============================================================
 def normalize_name(value: str) -> str:
     return re.sub(r"\s+", " ", str(value).strip())
@@ -281,7 +253,7 @@ def read_uploaded_file(uploaded_file) -> Dict[str, pd.DataFrame]:
                 result[normalize_name(sheet)] = df
         return result
 
-    raise ValueError("Formato no soportado. Usa CSV o Excel (.xlsx/.xlsm/.xls).")
+    raise ValueError("Formato no soportado.")
 
 
 def find_time_column(df: pd.DataFrame) -> str:
@@ -293,7 +265,7 @@ def find_time_column(df: pd.DataFrame) -> str:
         text = str(col).lower()
         if "timestamp" in text or "datetime" in text or "time" in text:
             return col
-    raise ValueError("No encuentro la columna de fecha/hora. Se esperaba 'Time' o equivalente.")
+    raise ValueError("No se encontró la columna de fecha/hora.")
 
 
 def find_generator_load_columns(df: pd.DataFrame) -> List[str]:
@@ -339,7 +311,7 @@ def prepare_rig(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str], str, List[st
     time_col = find_time_column(df)
     gen_cols = find_generator_load_columns(df)
     if not gen_cols:
-        raise ValueError("No encuentro columnas de carga como 'Percent power used GEN 1' ... 'GEN 4'.")
+        raise ValueError("No se encontraron columnas de carga de generadores.")
 
     df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
     df = df.dropna(subset=[time_col]).sort_values(time_col).reset_index(drop=True)
@@ -375,13 +347,12 @@ def detect_events(
     time_col: str,
     threshold: float,
     min_hours: float,
-    active_threshold: float,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     work = df.copy()
     values = work[gen_cols]
 
-    work["generadores_activos"] = (values > active_threshold).sum(axis=1)
-    work["generadores_baja"] = ((values > active_threshold) & (values <= threshold)).sum(axis=1)
+    work["generadores_activos"] = (values > ACTIVE_THRESHOLD).sum(axis=1)
+    work["generadores_baja"] = ((values > ACTIVE_THRESHOLD) & (values <= threshold)).sum(axis=1)
     work["condicion_alerta"] = (
         (work["generadores_activos"] >= 2)
         & (work["generadores_baja"] >= 2)
@@ -410,11 +381,11 @@ def detect_events(
 
         involved = []
         for col in gen_cols:
-            if (g[col] > active_threshold).any():
+            if (g[col] > ACTIVE_THRESHOLD).any():
                 involved.append(gen_label(col))
 
         active_vals = g[gen_cols].values
-        active_vals_filtered = active_vals[active_vals > active_threshold]
+        active_vals_filtered = active_vals[active_vals > ACTIVE_THRESHOLD]
         avg_load = active_vals_filtered.mean() if len(active_vals_filtered) > 0 else 0.0
         max_active = int(g["generadores_activos"].max())
 
@@ -433,14 +404,13 @@ def detect_events(
     return work, pd.DataFrame(events).sort_values("Inicio").reset_index(drop=True)
 
 
-def calculate_metrics(df, gen_cols, power_cols, active_threshold):
+def calculate_metrics(df, gen_cols, power_cols):
     load_avgs = {}
     active_loads = []
 
     for col in gen_cols:
         m = re.search(r"(?:gen(?:erator|erador)?)[\s_\-]*(\d+)", str(col), re.IGNORECASE)
-        # SOLUCIÓN: Filtrar solo valores mayores al umbral activo (excluir ceros)
-        valid_series = df[df[col] > active_threshold][col]
+        valid_series = df[df[col] > ACTIVE_THRESHOLD][col]
         if m:
             gen_idx = int(m.group(1))
             load_avgs[gen_idx] = float(valid_series.mean()) if not valid_series.empty else None
@@ -453,7 +423,7 @@ def calculate_metrics(df, gen_cols, power_cols, active_threshold):
     if power_cols:
         p_vals = []
         for col in power_cols:
-            v_p = df[df[col] > 10.0][col]  # Filtrar potencias menores o iguales a 10 kW
+            v_p = df[df[col] > 10.0][col]
             if not v_p.empty:
                 p_vals.extend(v_p.tolist())
         if p_vals:
@@ -462,25 +432,18 @@ def calculate_metrics(df, gen_cols, power_cols, active_threshold):
     return load_avgs, overall_load, overall_power
 
 
-def date_range_text(df, time_col):
-    start = df[time_col].min()
-    end = df[time_col].max()
-    if pd.isna(start) or pd.isna(end):
-        return "Fecha no disponible"
-    return f"{start.day} {start.strftime('%b')} – {end.day} {end.strftime('%b')}"
-
-
-def metric_card(label, value, accent=None, sub=None):
-    accent_html = f'<div class="accent" style="background:{accent};"></div>' if accent else ""
-    sub_html = f'<div class="metric-sub">{sub}</div>' if sub else ""
-    return f"""
-    <div class="metric-card">
-        {accent_html}
-        <div class="metric-label">{label}</div>
-        <div class="metric-value">{value}</div>
-        {sub_html}
-    </div>
-    """
+def render_card(label, value, accent="#00A8E8", sub=""):
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="accent" style="background:{accent};"></div>
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{value}</div>
+            <div class="metric-sub">{sub}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def make_load_chart(df, gen_cols, time_col, threshold, events, rig):
@@ -506,12 +469,11 @@ def make_load_chart(df, gen_cols, time_col, threshold, events, rig):
             )
         )
 
-    # SOLUCIÓN: Posicionar el texto del umbral en top left para evitar superposiciones
     fig.add_hline(
         y=threshold,
         line_color="#ffffff",
         line_dash="dot",
-        line_width=2,
+        line_width=1.5,
         annotation_text=f"UMBRAL {threshold:.0f}%",
         annotation_position="top left",
         annotation_font_color="#ffffff",
@@ -529,10 +491,9 @@ def make_load_chart(df, gen_cols, time_col, threshold, events, rig):
 
     fig.update_layout(
         title=dict(
-            text=f"Carga de los 4 generadores — Rig {rig}",
-            font=dict(color="#ffffff", size=16),
+            text=f"Carga de los generadores — Rig {rig}",
+            font=dict(color="#ffffff", size=15),
             x=0.0,
-            xanchor="left",
         ),
         plot_bgcolor="#112a47",
         paper_bgcolor="#112a47",
@@ -547,31 +508,26 @@ def make_load_chart(df, gen_cols, time_col, threshold, events, rig):
             x=1,
         ),
         xaxis=dict(
-            title=dict(text="Tiempo", font=dict(color="#b0c4de", size=12)),
-            tickfont=dict(color="#ffffff", size=10),
+            title="Tiempo",
+            tickfont=dict(color="#ffffff"),
             showgrid=True,
             gridcolor="rgba(255,255,255,0.08)",
-            color="#ffffff",
-            zeroline=False,
         ),
         yaxis=dict(
-            title=dict(text="Carga (%)", font=dict(color="#b0c4de", size=12)),
-            tickfont=dict(color="#ffffff", size=10),
+            title="Carga (%)",
+            tickfont=dict(color="#ffffff"),
             showgrid=True,
             gridcolor="rgba(255,255,255,0.08)",
-            color="#ffffff",
             range=[0, max(55, df[gen_cols].max().max() + 5)],
-            zeroline=False,
         ),
         hovermode="x unified",
-        margin=dict(l=45, r=25, t=50, b=40),
-        height=420,
+        margin=dict(l=40, r=20, t=50, b=40),
+        height=400,
     )
     return fig
 
 
 def make_fleet_chart(summary):
-    # SOLUCIÓN: Asegurar que la columna 'Taladro' sea de tipo string para evitar ejes decimales
     s = summary.copy()
     s["Taladro"] = "Rig " + s["Taladro"].astype(str)
     s = s.sort_values("Eventos >5h", ascending=True)
@@ -584,7 +540,6 @@ def make_fleet_chart(summary):
             text=s["Eventos >5h"],
             textposition="outside",
             marker_color="#00A8E8",
-            hovertemplate="%{y}<br>Eventos >5h: %{x}<extra></extra>",
         )
     )
     fig.update_layout(
@@ -592,26 +547,16 @@ def make_fleet_chart(summary):
         paper_bgcolor="#112a47",
         font=dict(color="#ffffff"),
         title=dict(text="Eventos prolongados por taladro", font=dict(size=15, color="#ffffff")),
-        xaxis=dict(
-            title="Cantidad de eventos >5 h",
-            color="#ffffff",
-            gridcolor="rgba(255,255,255,.08)",
-            dtick=1,
-        ),
-        yaxis=dict(
-            title="Taladro",
-            color="#ffffff",
-            type="category",  # SOLUCIÓN: Eje puramente categórico
-            gridcolor="rgba(255,255,255,.08)",
-        ),
-        margin=dict(l=50, r=45, t=45, b=35),
-        height=350,
+        xaxis=dict(title="Cantidad de eventos >5 h", color="#ffffff", gridcolor="rgba(255,255,255,.08)", dtick=1),
+        yaxis=dict(title="Taladro", color="#ffffff", type="category"),
+        margin=dict(l=40, r=40, t=40, b=30),
+        height=320,
     )
     return fig
 
 
 # ============================================================
-# SIDEBAR / CONFIGURACION
+# SIDEBAR
 # ============================================================
 with st.sidebar:
     st.header("⚙️ Configuración")
@@ -629,48 +574,35 @@ with st.sidebar:
         value=DEFAULT_MIN_HOURS,
         step=0.5,
     )
-    active_threshold = st.number_input(
-        "Umbral para GEN activo (%)",
-        min_value=0.0,
-        max_value=20.0,
-        value=DEFAULT_ACTIVE_THRESHOLD,
-        step=0.5,
-    )
     st.markdown("---")
-    st.caption("Regla: ≥2 GEN activos + ≥2 GEN en baja carga + duración continua > umbral.")
+    st.caption("Criterio: ≥2 GEN activos (>0%) con carga ≤ umbral durante un tiempo continuo mayor a la duración mínima.")
 
 uploaded = st.file_uploader(
-    "📂 Carga el Excel consolidado o CSV",
+    "📂 Cargar archivo (.xlsx, .csv)",
     type=["xlsx", "xlsm", "xls", "csv"],
-    help="Soporta múltiples taladros en pestañas o archivos individuales.",
 )
 
 if not uploaded:
-    st.info("Por favor, carga el archivo de datos para iniciar el análisis.")
+    st.info("Cargue un archivo para visualizar el análisis.")
     st.stop()
 
 # ============================================================
-# LECTURA Y ANALISIS
+# PROCESAMIENTO
 # ============================================================
 try:
     rig_data = read_uploaded_file(uploaded)
 except Exception as e:
-    st.error(f"No se pudo leer el archivo: {e}")
+    st.error(f"Error al leer el archivo: {e}")
     st.stop()
 
 all_results = []
 rig_prepared = {}
-errors = {}
 
 for rig, raw_df in rig_data.items():
     try:
         df, gen_cols, time_col, power_cols = prepare_rig(raw_df)
-        work, events = detect_events(
-            df, gen_cols, time_col, threshold, min_hours, active_threshold
-        )
-        load_avgs, overall_load, overall_power = calculate_metrics(
-            df, gen_cols, power_cols, active_threshold
-        )
+        work, events = detect_events(df, gen_cols, time_col, threshold, min_hours)
+        load_avgs, overall_load, overall_power = calculate_metrics(df, gen_cols, power_cols)
 
         rig_prepared[rig] = {
             "df": df,
@@ -693,91 +625,63 @@ for rig, raw_df in rig_data.items():
             "Mayor evento (h)": round(events["Duración (h)"].max(), 2) if not events.empty else 0.0,
         })
     except Exception as e:
-        errors[rig] = str(e)
+        st.warning(f"No se pudo procesar {rig}: {e}")
 
 if not rig_prepared:
-    st.error("No se pudo procesar ningún taladro con la estructura requerida.")
-    if errors:
-        for rig, error in errors.items():
-            st.write(f"**{rig}:** {error}")
     st.stop()
 
 summary = pd.DataFrame(all_results)
 
 # ============================================================
-# SELECTOR Y HEADER
+# SELECCIÓN Y DASHBOARD
 # ============================================================
-rig_options = list(rig_prepared.keys())
-selected_rig = st.selectbox("🛢️ Seleccione el taladro", rig_options)
+selected_rig = st.selectbox("🛢️ Seleccionar Taladro", list(rig_prepared.keys()))
+res = rig_prepared[selected_rig]
 
-result = rig_prepared[selected_rig]
-df = result["df"]
-gen_cols = result["gen_cols"]
-time_col = result["time_col"]
-power_cols = result["power_cols"]
-work = result["work"]
-events = result["events"]
-load_avgs = result["load_avgs"]
-overall_load = result["overall_load"]
-overall_power = result["overall_power"]
+start_t = res["df"][res["time_col"]].min()
+end_t = res["df"][res["time_col"]].max()
+period_str = f"{start_t.strftime('%d %b')} – {end_t.strftime('%d %b')}" if pd.notna(start_t) else ""
 
-period = date_range_text(df, time_col)
-
-# SOLUCIÓN: Título principal corregido con estructura HTML limpia
 st.markdown(
     f"""
     <div class="dashboard-header">
         <div class="dashboard-title">RIG {selected_rig} <span>— CARGA INDIVIDUAL DE LOS GENERADORES</span></div>
         <div class="date-box">
             <div class="date-label">Fecha analizada</div>
-            <div class="date-value">{period}</div>
+            <div class="date-value">{period_str}</div>
         </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-# ============================================================
-# TARJETAS SUPERIORES DE METRICAS
-# ============================================================
-metric_cols = st.columns(6, gap="small")
+# Tarjetas Superiores
 accents = ["#00A8E8", "#FFC000", "#2CA02C", "#FF4B23"]
+cols = st.columns(6)
 
-for i, col in enumerate(metric_cols[:4], start=1):
-    value = load_avgs.get(i)
-    value_text = f"{value:.2f}%" if value is not None else "Sin Operación"
-    sub_text = "Promedio en operación" if value is not None else "Inactivo / Sin datos"
-    with col:
-        st.markdown(
-            metric_card(f"Promedio GEN {i}", value_text, accents[i - 1], sub=sub_text),
-            unsafe_allow_html=True,
-        )
+for i in range(1, 5):
+    val = res["load_avgs"].get(i)
+    txt = f"{val:.2f}%" if val is not None else "N/A"
+    with cols[i - 1]:
+        render_card(f"PROMEDIO GEN {i}", txt, accents[i - 1], "Promedio en operación")
 
-with metric_cols[4]:
-    st.markdown(
-        metric_card("Promedio General Carga", f"{overall_load:.2f}%", sub="Generadores activos"),
-        unsafe_allow_html=True,
-    )
+with cols[4]:
+    render_card("PROMEDIO GENERAL CARGA", f"{res['overall_load']:.2f}%", "#00A8E8", "Generadores activos")
 
-with metric_cols[5]:
-    power_text = f"{overall_power:,.1f} kW" if overall_power is not None else "N/D"
-    power_sub = "Promedio en kW" if overall_power is not None else "Columna kW no detectada"
-    st.markdown(
-        metric_card("Promedio General Potencia", power_text, sub=power_sub),
-        unsafe_allow_html=True,
-    )
+with cols[5]:
+    p_txt = f"{res['overall_power']:,.1f} kW" if res["overall_power"] is not None else "N/D"
+    render_card("PROMEDIO POTENCIA", p_txt, "#00A8E8", "Promedio en kW")
 
-# ============================================================
-# CUERPO PRINCIPAL
-# ============================================================
-left, right = st.columns([2.1, 0.9], gap="small")
+st.markdown("<br>", unsafe_allow_html=True)
 
-with left:
-    fig = make_load_chart(df, gen_cols, time_col, threshold, events, selected_rig)
+# Sección central
+c_left, c_right = st.columns([2.2, 0.8], gap="medium")
+
+with c_left:
+    fig = make_load_chart(res["df"], res["gen_cols"], res["time_col"], threshold, res["events"], selected_rig)
     st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False})
 
-with right:
-    # SOLUCIÓN: Renderizado HTML asegurado con unsafe_allow_html=True
+with c_right:
     st.markdown(
         f"""
         <div class="criterion">
@@ -789,82 +693,47 @@ with right:
         unsafe_allow_html=True,
     )
 
-    total_event_hours = events["Duración (h)"].sum() if not events.empty else 0.0
-    max_duration = events["Duración (h)"].max() if not events.empty else 0.0
-    max_active = int(work["generadores_activos"].max()) if len(work) else 0
+    ev_df = res["events"]
+    tot_h = ev_df["Duración (h)"].sum() if not ev_df.empty else 0.0
+    max_h = ev_df["Duración (h)"].max() if not ev_df.empty else 0.0
+    max_act = int(res["work"]["generadores_activos"].max()) if len(res["work"]) else 0
 
-    c1, c2 = st.columns(2, gap="small")
-    with c1:
-        st.markdown(
-            metric_card("EVENTOS >5 H", f"{len(events)}", sub=f"{total_event_hours:.1f} h acumuladas"),
-            unsafe_allow_html=True,
-        )
-    with c2:
-        st.markdown(
-            metric_card("MÁX. DURACIÓN", f"{max_duration:.1f} h" if max_duration else "0 h", sub="Evento mayor"),
-            unsafe_allow_html=True,
-        )
+    r1_1, r1_2 = st.columns(2)
+    with r1_1:
+        render_card("EVENTOS >5 H", f"{len(ev_df)}", "#00A8E8", f"{tot_h:.1f} h acumuladas")
+    with r1_2:
+        render_card("MÁX. DURACIÓN", f"{max_h:.1f} h", "#00A8E8", "Evento mayor")
 
-    c3, c4 = st.columns(2, gap="small")
-    with c3:
-        st.markdown(
-            metric_card("MÁX. GEN ACTIVOS", f"{max_active}", sub=f"{len(gen_cols)} instalados"),
-            unsafe_allow_html=True,
-        )
-    with c4:
-        st.markdown(
-            metric_card("HORAS EN EVENTOS", f"{total_event_hours:.1f} h", sub="Tiempo acumulado"),
-            unsafe_allow_html=True,
-        )
+    st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
 
-# ============================================================
-# TABLA DE EVENTOS DETECTADOS
-# ============================================================
+    r2_1, r2_2 = st.columns(2)
+    with r2_1:
+        render_card("MÁX. GEN ACTIVOS", f"{max_act}", "#00A8E8", f"{len(res['gen_cols'])} instalados")
+    with r2_2:
+        render_card("HORAS EN EVENTOS", f"{tot_h:.1f} h", "#00A8E8", "Tiempo acumulado")
+
+# Tablas y Resultados
 st.markdown('<div class="section-title">EVENTOS DETECTADOS</div>', unsafe_allow_html=True)
-
-if events.empty:
-    st.success(
-        f"No se encontraron eventos ineficientes con los parámetros seleccionados (Carga ≤ {threshold:.0f}%, Duración > {min_hours:g} h)."
-    )
+if res["events"].empty:
+    st.info("No se registraron eventos prolongados bajo los parámetros establecidos.")
 else:
-    display_events = events.copy()
-    display_events["Inicio"] = display_events["Inicio"].dt.strftime("%Y-%m-%d %H:%M")
-    display_events["Fin"] = display_events["Fin"].dt.strftime("%Y-%m-%d %H:%M")
-    st.dataframe(display_events, use_container_width=True, hide_index=True)
+    disp_events = res["events"].copy()
+    disp_events["Inicio"] = disp_events["Inicio"].dt.strftime("%Y-%m-%d %H:%M")
+    disp_events["Fin"] = disp_events["Fin"].dt.strftime("%Y-%m-%d %H:%M")
+    st.dataframe(disp_events, use_container_width=True, hide_index=True)
 
-# ============================================================
-# VISTA DE FLOTA
-# ============================================================
+# Vista de Flota
 st.markdown("---")
 st.markdown('<div class="section-title">VISTA DE FLOTA</div>', unsafe_allow_html=True)
 
-f1, f2, f3, f4 = st.columns(4)
-f1.metric("Taladros cargados", len(summary))
-f2.metric("Total Eventos >5 h", int(summary["Eventos >5h"].sum()))
-f3.metric("Horas acumuladas flota", f"{summary['Horas en eventos >5h'].sum():.1f} h")
-f4.metric("Máxima duración flota", f"{summary['Mayor evento (h)'].max():.1f} h")
-
-fc1, fc2 = st.columns([1.2, 0.8], gap="small")
+fc1, fc2 = st.columns([1.2, 0.8], gap="medium")
 with fc1:
     st.plotly_chart(make_fleet_chart(summary), use_container_width=True, config={"displaylogo": False})
 with fc2:
-    st.write("")
-    st.write("**Resumen detallado por taladro**")
+    st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
     st.dataframe(summary.sort_values("Horas en eventos >5h", ascending=False), use_container_width=True, hide_index=True)
 
-# ============================================================
-# EXPANDER DE DIAGNÓSTICO
-# ============================================================
-with st.expander("🔎 Diagnóstico de columnas del taladro seleccionado"):
-    st.write("**Columna de Tiempo:**", time_col)
-    for col in gen_cols:
-        st.write(f"**{gen_label(col)}:** `{col}`")
-    if power_cols:
-        st.write("**Columnas de Potencia:**", ", ".join([f"`{c}`" for c in power_cols]))
-
-# ============================================================
-# PIE DE PÁGINA
-# ============================================================
+# Footer
 st.markdown(
     """
     <div class="brand-footer">
@@ -880,21 +749,4 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-)
-
-# ============================================================
-# DESCARGA DE RESULTADOS
-# ============================================================
-out = io.BytesIO()
-with pd.ExcelWriter(out, engine="openpyxl") as writer:
-    summary.to_excel(writer, sheet_name="Resumen Flota", index=False)
-    events.to_excel(writer, sheet_name="Eventos", index=False)
-    work.to_excel(writer, sheet_name="Datos Procesados", index=False)
-out.seek(0)
-
-st.download_button(
-    "📥 Descargar Análisis Consolidado en Excel",
-    data=out,
-    file_name=f"Analisis_Generadores_{selected_rig}.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )

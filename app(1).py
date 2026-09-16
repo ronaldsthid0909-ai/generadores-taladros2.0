@@ -700,7 +700,7 @@ with cols[5]:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # Sección central
-c_left, c_right = st.columns([2, 1.0], gap="medium")
+c_left, c_right = st.columns([2.1, 1.1], gap="medium")
 
 with c_left:
     fig = make_load_chart(res["df"], res["gen_cols"], res["time_col"], threshold, res["events"], selected_rig)
